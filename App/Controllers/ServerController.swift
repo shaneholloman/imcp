@@ -432,6 +432,8 @@ actor MCPConnectionManager {
         self.transport = NetworkTransport(
             connection: connection,
             logger: nil,
+            heartbeatConfig: .init(enabled: false),
+            reconnectionConfig: .disabled,
             bufferConfig: .unlimited
         )
 
@@ -627,6 +629,7 @@ actor ServerNetworkManager {
     private var connections: [UUID: MCPConnectionManager] = [:]
     private var connectionTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingConnections: [UUID: String] = [:]
+    private var removedConnections: Set<UUID> = []
 
     typealias ConnectionApprovalHandler = @Sendable (UUID, MCP.Client.Info) async -> Bool
     private var connectionApprovalHandler: ConnectionApprovalHandler?
@@ -764,11 +767,20 @@ actor ServerNetworkManager {
         connections.removeAll()
         connectionTasks.removeAll()
         pendingConnections.removeAll()
+        removedConnections.removeAll()
 
         await discoveryManager?.stop()
     }
 
     func removeConnection(_ id: UUID) async {
+        // Guard against redundant removal — calling stop() on an already-stopped
+        // connection can trigger a double-resume in the SDK's transport continuation.
+        guard !removedConnections.contains(id) else {
+            log.debug("Connection \(id) already removed, skipping")
+            return
+        }
+        removedConnections.insert(id)
+
         log.debug("Removing connection: \(id)")
 
         if let connectionManager = connections[id] {
@@ -873,7 +885,7 @@ actor ServerNetworkManager {
                                 .init(
                                     name: tool.name,
                                     description: tool.description,
-                                    inputSchema: tool.inputSchema,
+                                    inputSchema: try Value(tool.inputSchema),
                                     annotations: tool.annotations
                                 )
                             )
@@ -889,7 +901,7 @@ actor ServerNetworkManager {
         await server.withMethodHandler(CallTool.self) { [weak self] params in
             guard let self = self else {
                 return CallTool.Result(
-                    content: [.text("Server unavailable")],
+                    content: [.text(text: "Server unavailable", annotations: nil, _meta: nil)],
                     isError: true
                 )
             }
@@ -899,7 +911,7 @@ actor ServerNetworkManager {
             guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
                 return CallTool.Result(
-                    content: [.text("iMCP is currently disabled. Please enable it to use tools.")],
+                    content: [.text(text: "iMCP is currently disabled. Please enable it to use tools.", annotations: nil, _meta: nil)],
                     isError: true
                 )
             }
@@ -928,7 +940,9 @@ actor ServerNetworkManager {
                                 content: [
                                     .audio(
                                         data: data.base64EncodedString(),
-                                        mimeType: mimeType
+                                        mimeType: mimeType,
+                                        annotations: nil,
+                                        _meta: nil
                                     )
                                 ],
                                 isError: false
@@ -939,7 +953,8 @@ actor ServerNetworkManager {
                                     .image(
                                         data: data.base64EncodedString(),
                                         mimeType: mimeType,
-                                        metadata: nil
+                                        annotations: nil,
+                                        _meta: nil
                                     )
                                 ],
                                 isError: false
@@ -953,20 +968,20 @@ actor ServerNetworkManager {
                             let data = try encoder.encode(value)
                             let text = String(data: data, encoding: .utf8)!
 
-                            return CallTool.Result(content: [.text(text)], isError: false)
+                            return CallTool.Result(content: [.text(text: text, annotations: nil, _meta: nil)], isError: false)
                         }
                     } catch {
                         log.error(
                             "Error executing tool \(params.name): \(error.localizedDescription)"
                         )
-                        return CallTool.Result(content: [.text("Error: \(error)")], isError: true)
+                        return CallTool.Result(content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)], isError: true)
                     }
                 }
             }
 
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
-                content: [.text("Tool not found or service not enabled: \(params.name)")],
+                content: [.text(text: "Tool not found or service not enabled: \(params.name)", annotations: nil, _meta: nil)],
                 isError: true
             )
         }
