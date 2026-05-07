@@ -911,7 +911,13 @@ actor ServerNetworkManager {
             guard await self.isEnabledState else {
                 log.notice("Tool call rejected: iMCP is disabled")
                 return CallTool.Result(
-                    content: [.text(text: "iMCP is currently disabled. Please enable it to use tools.", annotations: nil, _meta: nil)],
+                    content: [
+                        .text(
+                            text: "iMCP is currently disabled. Please enable it to use tools.",
+                            annotations: nil,
+                            _meta: nil
+                        )
+                    ],
                     isError: true
                 )
             }
@@ -968,20 +974,28 @@ actor ServerNetworkManager {
                             let data = try encoder.encode(value)
                             let text = String(data: data, encoding: .utf8)!
 
-                            return CallTool.Result(content: [.text(text: text, annotations: nil, _meta: nil)], isError: false)
+                            return CallTool.Result(
+                                content: [.text(text: text, annotations: nil, _meta: nil)],
+                                isError: false
+                            )
                         }
                     } catch {
                         log.error(
                             "Error executing tool \(params.name): \(error.localizedDescription)"
                         )
-                        return CallTool.Result(content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)], isError: true)
+                        return CallTool.Result(
+                            content: [.text(text: "Error: \(error)", annotations: nil, _meta: nil)],
+                            isError: true
+                        )
                     }
                 }
             }
 
             log.error("Tool not found or service not enabled: \(params.name)")
             return CallTool.Result(
-                content: [.text(text: "Tool not found or service not enabled: \(params.name)", annotations: nil, _meta: nil)],
+                content: [
+                    .text(text: "Tool not found or service not enabled: \(params.name)", annotations: nil, _meta: nil)
+                ],
                 isError: true
             )
         }
